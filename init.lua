@@ -5,7 +5,6 @@ local modname = minetest.get_current_modname()
 local config = dofile(minetest.get_modpath(modname) .. "/config.lua")
 
 local player_huds = {}
-local player_states = {}
 
 local function get_item_weight(itemstack)
     if itemstack:is_empty() then return 0 end
@@ -51,14 +50,13 @@ local function calculate_total_weight(player)
     return total_weight
 end
 
-local function update_player_weight(player, force_physics)
+local function update_player_weight(player)
     if not player or not player:is_player() then return end
     local name = player:get_player_name()
     local weight = calculate_total_weight(player)
 
     local state = "normal"
     local hud_color = config.hud_colors.normal
-    -- Використовуємо %.1f для показу десятих
     local hud_text = string.format("Weight: %.1f / %d", weight, config.limits.normal)
 
     if weight > config.limits.heavy then
@@ -71,16 +69,13 @@ local function update_player_weight(player, force_physics)
         hud_text = string.format("Weight: %.1f (Heavy)", weight)
     end
 
-    if force_physics or player_states[name] ~= state then
-        player_states[name] = state
-
-        if state == "heavy" then
-            player:set_physics_override(config.penalties.heavy)
-        elseif state == "overloaded" then
-            player:set_physics_override(config.penalties.overloaded)
-        else
-            player:set_physics_override({ speed = 1.0, jump = 1.0 })
-        end
+    -- ЗАВЖДИ ОНОВЛЮЄМО LEAN_PHYSICS
+    if state == "heavy" then
+        lean_physics.set_modifier(name, "weight", config.penalties.heavy)
+    elseif state == "overloaded" then
+        lean_physics.set_modifier(name, "weight", config.penalties.overloaded)
+    else
+        lean_physics.clear_modifier(name, "weight")
     end
 
     if player_huds[name] then
@@ -99,14 +94,13 @@ local function update_player_weight(player, force_physics)
 end
 
 local function background_update(player)
-    update_player_weight(player, false)
+    update_player_weight(player)
     minetest.after(2, background_update, player)
 end
 
 minetest.register_on_joinplayer(function(player)
     local name = player:get_player_name()
     player_huds[name] = nil
-    player_states[name] = "normal"
     minetest.after(1, background_update, player)
 end)
 
@@ -116,29 +110,19 @@ minetest.register_on_leaveplayer(function(player)
         player:hud_remove(player_huds[name])
     end
     player_huds[name] = nil
-    player_states[name] = nil
-    
-    if player and player:is_player() then
-        player:set_physics_override({ speed = 1.0, jump = 1.0 })
-    end
-end)
-
-minetest.register_on_shutdown(function()
-    for _, player in ipairs(minetest.get_connected_players()) do
-        player:set_physics_override({ speed = 1.0, jump = 1.0 })
-    end
+    lean_physics.clear_modifier(name, "weight")
 end)
 
 minetest.register_on_player_inventory_action(function(player, action, inventory, inventory_info)
-    minetest.after(0.1, update_player_weight, player, true)
+    minetest.after(0.1, update_player_weight, player)
 end)
 
 if minetest.get_modpath("3d_armor") then
     armor:register_on_equip(function(player, index, stack)
-        minetest.after(0.1, update_player_weight, player, true)
+        minetest.after(0.1, update_player_weight, player)
     end)
     
     armor:register_on_unequip(function(player, index, stack)
-        minetest.after(0.1, update_player_weight, player, true)
+        minetest.after(0.1, update_player_weight, player)
     end)
 end
