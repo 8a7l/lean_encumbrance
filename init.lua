@@ -69,13 +69,16 @@ local function update_player_weight(player)
         hud_text = string.format("Weight: %.1f (Heavy)", weight)
     end
 
-    -- ЗАВЖДИ ОНОВЛЮЄМО LEAN_PHYSICS
+    -- Use playerphysics API / Використовуємо API playerphysics
     if state == "heavy" then
-        lean_physics.set_modifier(name, "weight", config.penalties.heavy)
+        playerphysics.add_physics_factor(player, "speed", "weight_penalty", config.penalties.heavy.speed)
+        playerphysics.add_physics_factor(player, "jump", "weight_penalty", config.penalties.heavy.jump)
     elseif state == "overloaded" then
-        lean_physics.set_modifier(name, "weight", config.penalties.overloaded)
+        playerphysics.add_physics_factor(player, "speed", "weight_penalty", config.penalties.overloaded.speed)
+        playerphysics.add_physics_factor(player, "jump", "weight_penalty", config.penalties.overloaded.jump)
     else
-        lean_physics.clear_modifier(name, "weight")
+        playerphysics.remove_physics_factor(player, "speed", "weight_penalty")
+        playerphysics.remove_physics_factor(player, "jump", "weight_penalty")
     end
 
     if player_huds[name] then
@@ -110,7 +113,8 @@ minetest.register_on_leaveplayer(function(player)
         player:hud_remove(player_huds[name])
     end
     player_huds[name] = nil
-    lean_physics.clear_modifier(name, "weight")
+    playerphysics.remove_physics_factor(player, "speed", "weight_penalty")
+    playerphysics.remove_physics_factor(player, "jump", "weight_penalty")
 end)
 
 minetest.register_on_player_inventory_action(function(player, action, inventory, inventory_info)
