@@ -6,21 +6,27 @@ local config = dofile(minetest.get_modpath(modname) .. "/config.lua")
 
 local player_huds = {}
 
+-- ============================================================
+-- WEIGHT CALCULATION / РОЗРАХУНОК ВАГИ
+-- ============================================================
 local function get_item_weight(itemstack)
     if itemstack:is_empty() then return 0 end
     local name = itemstack:get_name()
     local count = itemstack:get_count()
 
+    -- 1. Specific items (highest priority) / Конкретні предмети (найвищий пріоритет)
     if config.weights.items[name] then
         return config.weights.items[name] * count
     end
 
+    -- 2. Item groups / Групи предметів
     for group, weight in pairs(config.weights.groups) do
         if minetest.get_item_group(name, group) > 0 then
             return weight * count
         end
     end
 
+    -- 3. Default weight / Вага за замовчуванням
     return config.weights.default_weight * count
 end
 
@@ -28,12 +34,14 @@ local function calculate_total_weight(player)
     local total_weight = 0
     local inv = player:get_inventory()
 
+    -- Main inventory / Основний інвентар
     if inv then
         for i = 1, inv:get_size("main") do
             total_weight = total_weight + get_item_weight(inv:get_stack("main", i))
         end
     end
 
+    -- Armor inventory (3d_armor support) / Інвентар броні (підтримка 3d_armor)
     if minetest.get_modpath("3d_armor") then
         local armor_inv = minetest.get_inventory({type = "detached", name = player:get_player_name() .. "_armor"})
         if armor_inv then
@@ -50,6 +58,9 @@ local function calculate_total_weight(player)
     return total_weight
 end
 
+-- ============================================================
+-- UPDATE LOOP / ЦИКЛ ОНОВЛЕННЯ
+-- ============================================================
 local function update_player_weight(player)
     if not player or not player:is_player() then return end
     local name = player:get_player_name()
@@ -81,6 +92,7 @@ local function update_player_weight(player)
         playerphysics.remove_physics_factor(player, "jump", "weight_penalty")
     end
 
+    -- Update HUD / Оновлюємо HUD
     if player_huds[name] then
         player:hud_change(player_huds[name], "text", hud_text)
         player:hud_change(player_huds[name], "number", hud_color)
@@ -101,6 +113,9 @@ local function background_update(player)
     minetest.after(2, background_update, player)
 end
 
+-- ============================================================
+-- EVENTS / ПОДІЇ
+-- ============================================================
 minetest.register_on_joinplayer(function(player)
     local name = player:get_player_name()
     player_huds[name] = nil
@@ -113,8 +128,12 @@ minetest.register_on_leaveplayer(function(player)
         player:hud_remove(player_huds[name])
     end
     player_huds[name] = nil
-    playerphysics.remove_physics_factor(player, "speed", "weight_penalty")
-    playerphysics.remove_physics_factor(player, "jump", "weight_penalty")
+    
+    -- Clean up physics factors / Очищаємо фізичні фактори
+    if player and player:is_player() then
+        playerphysics.remove_physics_factor(player, "speed", "weight_penalty")
+        playerphysics.remove_physics_factor(player, "jump", "weight_penalty")
+    end
 end)
 
 minetest.register_on_player_inventory_action(function(player, action, inventory, inventory_info)
@@ -130,3 +149,27 @@ if minetest.get_modpath("3d_armor") then
         minetest.after(0.1, update_player_weight, player)
     end)
 end
+
+-- ============================================================
+-- TOOLTIP WEIGHT INJECTION / ДОДАВАННЯ ВАГИ В ОПИС ПРЕДМЕТІВ
+-- ============================================================
+minetest.register_on_mods_loaded(function()
+    for name, def in pairs(minetest.registered_items) do
+        if def.description and def.description ~= "" then
+            local stack = ItemStack(name)
+            local base_weight = get_item_weight(stack)
+            
+            if base_weight > 0 then
+                local weight_str = string.format("%.1f", base_weight):gsub("%.0$", "")
+                
+                -- Запобігаємо дублюванню ваги при перезавантаженні
+                -- Prevent weight duplication on reload
+                if not def.description:find("%[Weight:") then
+                    minetest.override_item(name, {
+                        description = def.description .. "\n" .. minetest.colorize("#FFA500", "[Weight: " .. weight_str .. "]")
+                    })
+                end
+            end
+        end
+    end
+end)
